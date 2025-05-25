@@ -51,12 +51,45 @@ class Basket {
     return true;
   }
 
+  isFull() {
+    return this.total >= this.limit;
+  }
+
   getResult() {
     return Promise.resolve({
       items: this.items,
       total: this.total,
       errors: this.errors
     });
+  }
+}
+
+class PurchaseProcessor {
+  constructor(iterator, basket) {
+    this.iterator = iterator;
+    this.basket = basket;
+  }
+
+  async process() {
+    try {
+      for await (const item of this.iterator) {
+        const added = this.basket.add(item);
+        if (!added) {
+          console.log(`Skipping ${item.name} due to limit`);
+          // If basket is full, break the loop
+          if (this.basket.isFull()) {
+            console.log('Basket is full, stopping processing');
+            break;
+          }
+        }
+      }
+      return await this.basket.getResult();
+    } catch (error) {
+      return Promise.reject({
+        error,
+        basket: await this.basket.getResult()
+      });
+    }
   }
 }
 
@@ -71,18 +104,20 @@ const purchase = [
 
 const main = async () => {
   const goods = PurchaseIterator.create(purchase);
-  const basket = new Basket({ limit: 1050 }, (items, total) => {
+  const basket = new Basket({ limit: 200 }, (items, total) => {
     console.log(total);
   });
   
-  for await (const item of goods) {
-    basket.add(item);
-  }
+  const processor = new PurchaseProcessor(goods, basket);
   
-  const result = await basket.getResult();
-  console.log('Final basket contents:', result.items);
-  console.log('Total:', result.total);
-  console.log('Errors:', result.errors);
+  try {
+    const result = await processor.process();
+    console.log('Final basket contents:', result.items);
+    console.log('Total:', result.total);
+    console.log('Errors:', result.errors);
+  } catch (error) {
+    console.error('Processing error:', error);
+  }
 };
 
 main();
